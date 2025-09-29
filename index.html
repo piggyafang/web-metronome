@@ -153,6 +153,7 @@
     let scheduleAheadTime = 0.1; // 預先排程的秒數
     let nextNoteTime = 0.0; // 下一個音符的時間
     let currentBeat = 0; // 目前在第幾拍（0 開始）
+    let currentPosition = 0; // 目前播放位置（用於箭頭指示器）
     let timerID = null; // 排程計時器
     let noteLength = 0.05; // 主拍音符長度（秒）
     let subBeatLength = 0.03; // 副拍音符長度（秒）
@@ -335,6 +336,12 @@
 
         // 更新目前拍數，支援多拍循環
         currentBeat = (currentBeat + 1) % beats;
+
+        // 更新當前播放位置（用於箭頭指示器）
+        currentPosition = currentBeat;
+
+        // 重繪樂譜以更新箭頭位置
+        drawNotation();
     }
 
     // 開始節拍器
@@ -350,6 +357,7 @@
             isPlaying = true;
             nextNoteTime = audioContext.currentTime;
             currentBeat = 0; // 重設拍數計數器
+            currentPosition = 0; // 重設播放位置指示器
             scheduler();
         }
     }
@@ -358,6 +366,9 @@
     function metrostop() {
         isPlaying = false;
         clearTimeout(timerID);
+
+        // 重繪樂譜以隱藏箭頭指示器
+        drawNotation();
     }
 
     // 更新 BPM
@@ -720,6 +731,29 @@
             legendX += 140;
             ctx.fillStyle = '#999';
             ctx.fillText('● 樂句節拍(小數)', legendX, legendY);
+        }
+
+        // 繪製播放位置箭頭指示器
+        if (isPlaying) {
+            const arrowX = margin + (currentPosition * beatWidth);
+            const arrowY = centerY - 45; // 箭頭位置在樂譜上方
+
+            // 繪製箭頭
+            ctx.fillStyle = '#ff0000'; // 紅色箭頭
+            ctx.beginPath();
+            ctx.moveTo(arrowX, arrowY);           // 箭頭頂端
+            ctx.lineTo(arrowX - 8, arrowY - 15);  // 左邊
+            ctx.lineTo(arrowX + 8, arrowY - 15);  // 右邊
+            ctx.closePath();
+            ctx.fill();
+
+            // 繪製箭頭柄
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(arrowX, arrowY);
+            ctx.lineTo(arrowX, arrowY + 10);
+            ctx.stroke();
         }
     }
 
