@@ -86,18 +86,18 @@
     <!-- 一般樂句節拍模式 -->
     <div id="normal-mode">
         <p><br /><span id="subbeats-description">輸入樂句節拍（0 到 1 之間數字，用逗號分隔）：</span></p>
-        <input id="subbeats" type="text" placeholder="例如：0.5 或 0.25,0.5,0.75" oninput="updateSubBeats();" style="width: 300px;">
+        <input id="subbeats" type="text" placeholder="例如：1/2 或 1/4,1/2,3/4 或 0.5,0.75" oninput="updateSubBeats();" style="width: 300px;">
         <span id="error-message" class="error-message"></span>
     </div>
 
     <!-- 主旋律/伴奏分離模式 -->
     <div id="melody-mode" style="display: none;">
         <p><br />主旋律節拍（<span id="melody-description">0 到 1 之間數字，用逗號分隔</span>）：</p>
-        <input id="melody-beats" type="text" placeholder="例如：0, 0.5, 1" oninput="updateMelodyBeats();" style="width: 300px;">
+        <input id="melody-beats" type="text" placeholder="例如：0, 1/2, 1 或 0, 0.5, 1" oninput="updateMelodyBeats();" style="width: 300px;">
         <span id="melody-error-message" class="error-message"></span>
 
         <p><br />伴奏節拍（<span id="accompaniment-description">0 到 1 之間數字，用逗號分隔</span>）：</p>
-        <input id="accompaniment-beats" type="text" placeholder="例如：0.25, 0.75" oninput="updateAccompanimentBeats();" style="width: 300px;">
+        <input id="accompaniment-beats" type="text" placeholder="例如：1/4, 3/4 或 0.25, 0.75" oninput="updateAccompanimentBeats();" style="width: 300px;">
         <span id="accompaniment-error-message" class="error-message"></span>
 
         <p><br />播放模式：</p>
@@ -116,17 +116,17 @@
     </div>
 	<p><br />快速設定：</p>
     <div class="preset-buttons">
-        <button onclick="setPreset('0.5')">八分</button>
-        <button onclick="setPreset('0.333,0.666')">三連音</button>
-        <button onclick="setPreset('0.25,0.5,0.75')">十六分</button>
-        <button onclick="setPreset('0.75')">附點</button>
+        <button onclick="setPreset('0.5')">八分 (1/2)</button>
+        <button onclick="setPreset('1/3,2/3')">三連音 (分數)</button>
+        <button onclick="setPreset('0.25,0.5,0.75')">十六分 (1/4系列)</button>
+        <button onclick="setPreset('3/4')">附點 (分數)</button>
         <button onclick="setPreset('0.666')">66% Swing</button>
     </div>
     <div class="preset-buttons">
-        <button onclick="setPreset('0.2,0.4,0.6,0.8')">五連音</button>
+        <button onclick="setPreset('1/5,2/5,3/5,4/5')">五連音 (分數)</button>
         <button onclick="setPreset('0.166,0.333,0.5,0.666,0.833')">六連音</button>
         <button onclick="setPreset('0.143,0.286,0.429,0.571,0.714,0.857')">七連音</button>
-        <button onclick="setPreset('0.333,0.5,0.666')">二對三</button>
+        <button onclick="setPreset('1/3,1/2,2/3')">二對三 (分數)</button>
         <button onclick="setPreset('0.58')">有點 Swing</button>
     </div>
     <div class="preset-buttons">
@@ -521,6 +521,30 @@
     }
 
     // 解析樂句節拍設定
+    // 解析分數或小數
+    function parseNumberOrFraction(value) {
+        // 移除空格
+        value = value.trim();
+
+        // 檢查是否為分數格式
+        if (value.includes('/')) {
+            const parts = value.split('/');
+            if (parts.length === 2) {
+                const numerator = parseFloat(parts[0].trim());
+                const denominator = parseFloat(parts[1].trim());
+
+                // 確保分子分母都是有效數字且分母不為0
+                if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
+                    return numerator / denominator;
+                }
+            }
+        }
+
+        // 嘗試解析為普通數字
+        const num = parseFloat(value);
+        return isNaN(num) ? null : num;
+    }
+
     function parsePhraseBeats(inputString) {
         if (!inputString || inputString.trim() === '') {
             return [];
@@ -531,8 +555,8 @@
             const validPositions = [];
 
             for (let value of values) {
-                const num = parseFloat(value);
-                if (isNaN(num)) continue;
+                const num = parseNumberOrFraction(value);
+                if (num === null) continue;
                 // 修改範圍檢查：現在支援 0 到 beats 之間的數字（包含 0）
                 if (num >= 0 && num < beats) {
                     validPositions.push(num);
