@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>不囉唆的節拍器 3.0 by NiceChord 好和弦</title>
+<style>
+
+    a {
+        color:rgb(17, 81, 136);
+        font-weight: bolder;
+    }
+    input {
+    	font-family: monospace;
+        margin-top: 0px;
+        font-size: 24px;
+    }
+    button {
+        padding: 1px 14px;
+        font-size: 20px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif;
+        border-radius: 3px;
+        border: 1px #777;
+        background: #eee;
+        box-shadow: 0px 0.5px 1px rgba(0, 0, 0, 0.2), inset 0px 0.5px 0.5px rgba(255, 255, 255, 0.5), 0px 0px 0px 0.5px rgba(0, 0, 0, 0.2);
+        color: #333;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: manipulation;
+    }
+    button:focus {
+        box-shadow: inset 0px 0.8px 0px -0.25px rgba(255, 255, 255, 0.2), 0px 0.5px 1px rgba(0, 0, 0, 0.1), 0px 0px 0px 3.5px rgba(58, 108, 217, 0.5);
+        outline: 0;
+    }
+    .error-message {
+        color: red;
+        font-size: 14px;
+        margin-left: 10px;
+    }
+    .preset-buttons {
+        margin-top: 8px;
+    }
+    .preset-buttons button {
+        margin-right: 2px;
+        font-size: 16px;
+        padding: 0px 8px;
+    }
+    #subbeats {
+    	font-size: 16px
+    }
+    p {
+    	line-height: 1.1;
+    	margin-bottom: 10px;
+    	margin-top: 0px;
+    }
+    p + p {
+    	margin-top: 0px;
+    }
+    #notation-canvas {
+        border: 1px solid #ccc;
+        margin-top: 20px;
+        background-color: #fafafa;
+        border-radius: 5px;
+    }
+</style>
+<body>
+    <p><b>不囉唆的節拍器 3.0</b> by <a href="https://nicechord.com/">NiceChord 好和弦</a><br /></p>
+    <input id="bpm" type="number" value="100" min="1" max="999" onchange="updateBPM();" onclick="select_all();" onkeypress="onTestChange();"> 
+    <button id="start" type="button" ontouchend="metrostart();" onclick="metrostart();">開始</button>
+    <button id="stop" type="button" ontouchend="metrostop();" onclick="metrostop();">停止</button>
+
+    <p><br />拍數設定：</p>
+    <input id="beats" type="number" value="1" min="1" max="16" onchange="updateBeatsRange();" onclick="select_all_beats();" style="width: 80px; margin-right: 10px;">
+    <span>拍</span>
+
+    <p><br />音效設定：</p>
+    <label>
+        <input id="main-beat-enabled" type="checkbox" checked onchange="updateMainBeatSetting();">
+        主拍音效
+    </label>
+
+    <p><br /><span id="subbeats-description">輸入拍子細分割（0 到 1 之間數字，用逗號分隔）：</span></p>
+    <input id="subbeats" type="text" placeholder="例如：0.5 或 0.25,0.5,0.75" oninput="updateSubBeats();" style="width: 300px;">
+    <span id="error-message" class="error-message"></span>
+	<p><br />快速設定：</p>
+    <div class="preset-buttons">
+        <button onclick="setPreset('0.5')">八分</button>
+        <button onclick="setPreset('0.333,0.666')">三連音</button>
+        <button onclick="setPreset('0.25,0.5,0.75')">十六分</button>
+        <button onclick="setPreset('0.75')">附點</button>
+        <button onclick="setPreset('0.666')">66% Swing</button>
+    </div>
+    <div class="preset-buttons">
+        <button onclick="setPreset('0.2,0.4,0.6,0.8')">五連音</button>
+        <button onclick="setPreset('0.166,0.333,0.5,0.666,0.833')">六連音</button>
+        <button onclick="setPreset('0.143,0.286,0.429,0.571,0.714,0.857')">七連音</button>
+        <button onclick="setPreset('0.333,0.5,0.666')">二對三</button>
+        <button onclick="setPreset('0.58')">有點 Swing</button>
+    </div>
+    <div class="preset-buttons">
+        <button onclick="setPreset('')">清除</button>
+    </div>
+
+    <p><br />樂譜預覽：</p>
+    <canvas id="notation-canvas" width="600" height="120"></canvas>
+
+
+    <script type="text/javascript" nonce="85ebbf0f41d74e43ac65f263643" src="//local.adguard.org?ts=1759115367134&amp;type=content-script&amp;dmn=nicechord.com&amp;url=https%3A%2F%2Fnicechord.com%2Fmetro3%2Findex.html&amp;app=com.google.Chrome&amp;css=3&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1"></script><script type="text/javascript" nonce="85ebbf0f41d74e43ac65f263643" src="//local.adguard.org?ts=1759115367134&amp;name=AdGuard%20Extra&amp;type=user-script"></script><script type="text/javascript">
+    let audioContext = null;
+    let isPlaying = false;
+    let bpm = 100;
+    let beats = 1; // 拍數設定
+    let mainBeatEnabled = true; // 主拍音效開關
+    let subBeatPositions = [];
+    let lookahead = 25; // 預先排程的時間（毫秒）
+    let scheduleAheadTime = 0.1; // 預先排程的秒數
+    let nextNoteTime = 0.0; // 下一個音符的時間
+    let currentBeat = 0; // 目前在第幾拍（0 開始）
+    let timerID = null; // 排程計時器
+    let noteLength = 0.05; // 主拍音符長度（秒）
+    let subBeatLength = 0.03; // 副拍音符長度（秒）
+    let noteFrequency = 523.25; // C5 頻率
+    let subBeatFrequency = 392; // G4 頻率
+
+    // 初始化
+    function init() {
+        bpm = document.getElementById('bpm').value;
+        beats = document.getElementById('beats').value;
+        mainBeatEnabled = document.getElementById('main-beat-enabled').checked;
+        updateBeatsRange(); // 更新描述文字
+
+        // 檢查瀏覽器支援
+        try {
+            window.AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioContext = new AudioContext();
+        } catch(e) {
+            alert('Web Audio API 不被您的瀏覽器支援。');
+        }
+    }
+
+    // 排程主拍音符
+    function scheduleNote(time) {
+        // 振盪器
+        const osc = audioContext.createOscillator();
+        osc.type = 'square';
+        osc.frequency.value = noteFrequency;
+        
+        // 音量
+        const gainNode = audioContext.createGain();
+        gainNode.gain.value = 0.25;
+                
+        // ADSR
+        gainNode.gain.setValueAtTime(0.25, time);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, time + noteLength);
+        
+        // 連接節點
+        osc.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // 啟動和停止振盪器
+        osc.start(time);
+        osc.stop(time + noteLength);
+    }
+
+    // 排程副拍音符
+    function scheduleSubBeat(time) {
+        // 振盪器
+        const osc = audioContext.createOscillator();
+        osc.type = 'square';
+        osc.frequency.value = subBeatFrequency;
+        
+        // 音量（比主拍小一點）
+        const gainNode = audioContext.createGain();
+        gainNode.gain.value = 0.15;
+                
+        // ADSR
+        gainNode.gain.setValueAtTime(0.15, time);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, time + subBeatLength);
+        
+        // 連接節點
+        osc.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // 啟動和停止振盪器
+        osc.start(time);
+        osc.stop(time + subBeatLength);
+    }
+
+    // 排程器（負責預先排程音符）
+    function scheduler() {
+        while (nextNoteTime < audioContext.currentTime + scheduleAheadTime) {
+            // 排程主拍（只有在主拍音效開啟時才排程）
+            if (mainBeatEnabled) {
+                scheduleNote(nextNoteTime);
+            }
+
+            // 排程副拍 - 支援多拍範圍
+            let secondsPerBeat = 60.0 / bpm;
+
+            // 只在第一拍時排程整個小節的副拍
+            if (currentBeat === 0) {
+                subBeatPositions.forEach(position => {
+                    // position 現在可以是 0 到 beats 之間的任何數字
+                    let subBeatTime = nextNoteTime + (position * secondsPerBeat);
+                    scheduleSubBeat(subBeatTime);
+                });
+            }
+
+            nextBeat();
+        }
+        timerID = setTimeout(scheduler, lookahead);
+    }
+
+    // 計算下一個音符時間
+    function nextBeat() {
+        // 根據 BPM 計算四分音符的時間（秒）
+        let secondsPerBeat = 60.0 / bpm;
+
+        // 增加時間到下一個音符
+        nextNoteTime += secondsPerBeat;
+
+        // 更新目前拍數，支援多拍循環
+        currentBeat = (currentBeat + 1) % beats;
+    }
+
+    // 開始節拍器
+    function metrostart() {
+        // 如果 AudioContext 暫停或尚未初始化，則初始化或恢復
+        if (!audioContext) {
+            init();
+        } else if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+        
+        if (!isPlaying) {
+            isPlaying = true;
+            nextNoteTime = audioContext.currentTime;
+            currentBeat = 0; // 重設拍數計數器
+            scheduler();
+        }
+    }
+
+    // 停止節拍器
+    function metrostop() {
+        isPlaying = false;
+        clearTimeout(timerID);
+    }
+
+    // 更新 BPM
+    function updateBPM() {
+        bpm = parseInt(document.getElementById('bpm').value);
+        if (bpm < 1) bpm = 1;
+        if (bpm > 999) bpm = 999;
+    }
+
+    // 更新拍數範圍描述
+    function updateBeatsRange() {
+        beats = parseInt(document.getElementById('beats').value);
+        if (beats < 1) beats = 1;
+        if (beats > 16) beats = 16;
+
+        const description = document.getElementById('subbeats-description');
+        description.textContent = `輸入拍子細分割（0 到 ${beats} 之間數字，用逗號分隔）：`;
+
+        // 重新驗證現有的副拍設定
+        updateSubBeats();
+
+        // 更新樂譜顯示
+        drawNotation();
+    }
+
+    // 選取拍數欄位全部文字
+    function select_all_beats() {
+        document.getElementById('beats').select();
+    }
+
+    // 更新主拍音效設定
+    function updateMainBeatSetting() {
+        mainBeatEnabled = document.getElementById('main-beat-enabled').checked;
+
+        // 更新樂譜顯示
+        drawNotation();
+    }
+
+    // 解析副拍設定
+    function parseSubBeats(inputString) {
+        if (!inputString || inputString.trim() === '') {
+            return [];
+        }
+
+        try {
+            const values = inputString.split(',').map(s => s.trim()).filter(s => s !== '');
+            const validPositions = [];
+
+            for (let value of values) {
+                const num = parseFloat(value);
+                if (isNaN(num)) continue;
+                // 修改範圍檢查：現在支援 0 到 beats 之間的數字
+                if (num > 0 && num < beats) {
+                    validPositions.push(num);
+                }
+            }
+
+            // 排序並去重
+            return [...new Set(validPositions)].sort();
+        } catch (e) {
+            throw new Error('解析錯誤');
+        }
+    }
+
+    // 更新副拍設定
+    function updateSubBeats() {
+        const input = document.getElementById('subbeats');
+        const errorElement = document.getElementById('error-message');
+
+        try {
+            subBeatPositions = parseSubBeats(input.value);
+            errorElement.textContent = '';
+        } catch (e) {
+            errorElement.textContent = '輸入格式錯誤';
+            subBeatPositions = [];
+        }
+
+        // 更新樂譜顯示
+        drawNotation();
+    }
+
+    // 設定預設值
+    function setPreset(preset) {
+        document.getElementById('subbeats').value = preset;
+        updateSubBeats();
+    }
+
+    // 選取全部文字
+    function select_all() {
+        document.getElementById('bpm').select();
+    }
+
+    // 按下 Enter 時啟動節拍器
+    function onTestChange() {
+        var key = window.event.keyCode;
+        
+        // 如果使用者按下 Enter
+        if (key === 13) {
+            metrostart();
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    // 繪製樂譜預覽
+    function drawNotation() {
+        const canvas = document.getElementById('notation-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // 清除畫布
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 設定繪圖參數
+        const margin = 40;
+        const usableWidth = canvas.width - 2 * margin;
+        const centerY = canvas.height / 2;
+        const beatWidth = usableWidth / beats;
+
+        // 繪製小節線
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(margin, centerY - 30);
+        ctx.lineTo(margin, centerY + 30);
+        ctx.moveTo(margin + usableWidth, centerY - 30);
+        ctx.lineTo(margin + usableWidth, centerY + 30);
+        ctx.stroke();
+
+        // 繪製拍子分隔線
+        ctx.strokeStyle = '#ccc';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 1; i < beats; i++) {
+            const x = margin + i * beatWidth;
+            ctx.moveTo(x, centerY - 20);
+            ctx.lineTo(x, centerY + 20);
+        }
+        ctx.stroke();
+
+        // 繪製主拍
+        for (let i = 0; i < beats; i++) {
+            const x = margin + i * beatWidth;
+
+            if (mainBeatEnabled) {
+                // 主拍音效開啟：實心黑色圓點
+                ctx.fillStyle = '#333';
+                ctx.beginPath();
+                ctx.arc(x, centerY, 8, 0, 2 * Math.PI);
+                ctx.fill();
+            } else {
+                // 主拍音效關閉：空心灰色圓點
+                ctx.strokeStyle = '#999';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(x, centerY, 8, 0, 2 * Math.PI);
+                ctx.stroke();
+            }
+
+            // 標示拍號
+            ctx.fillStyle = '#333';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(i.toString(), x, centerY + 35);
+        }
+
+        // 繪製副拍
+        ctx.fillStyle = '#999';
+        subBeatPositions.forEach(position => {
+            const x = margin + (position * beatWidth);
+            ctx.beginPath();
+            ctx.arc(x, centerY, 5, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // 標示副拍位置
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#666';
+            ctx.fillText(position.toString(), x, centerY - 20);
+            ctx.fillStyle = '#999';
+        });
+
+        // 繪製標題
+        ctx.fillStyle = '#333';
+        ctx.font = '16px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${beats} 拍小節`, 10, 25);
+
+        // 圖例
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = '#333';
+        if (mainBeatEnabled) {
+            ctx.fillText('● 主拍', canvas.width - 100, 25);
+        } else {
+            ctx.fillText('○ 主拍(無音效)', canvas.width - 120, 25);
+        }
+        ctx.fillStyle = '#999';
+        ctx.fillText('● 副拍', canvas.width - 100, 45);
+    }
+
+    // 當頁面載入完成後初始化
+    window.addEventListener('load', function() {
+        init();
+        drawNotation();
+    });
+    </script>
+</body>
