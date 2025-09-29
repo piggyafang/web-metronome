@@ -77,7 +77,7 @@
         主拍音效
     </label>
 
-    <p><br /><span id="subbeats-description">輸入拍子細分割（0 到 1 之間數字，用逗號分隔）：</span></p>
+    <p><br /><span id="subbeats-description">輸入樂句節拍（0 到 1 之間數字，用逗號分隔）：</span></p>
     <input id="subbeats" type="text" placeholder="例如：0.5 或 0.25,0.5,0.75" oninput="updateSubBeats();" style="width: 300px;">
     <span id="error-message" class="error-message"></span>
 	<p><br />快速設定：</p>
@@ -100,7 +100,7 @@
     </div>
 
     <p><br />樂譜預覽：</p>
-    <canvas id="notation-canvas" width="600" height="120"></canvas>
+    <canvas id="notation-canvas" width="600" height="140"></canvas>
 
 
     <script type="text/javascript" nonce="85ebbf0f41d74e43ac65f263643" src="//local.adguard.org?ts=1759115367134&amp;type=content-script&amp;dmn=nicechord.com&amp;url=https%3A%2F%2Fnicechord.com%2Fmetro3%2Findex.html&amp;app=com.google.Chrome&amp;css=3&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1"></script><script type="text/javascript" nonce="85ebbf0f41d74e43ac65f263643" src="//local.adguard.org?ts=1759115367134&amp;name=AdGuard%20Extra&amp;type=user-script"></script><script type="text/javascript">
@@ -109,7 +109,7 @@
     let bpm = 100;
     let beats = 1; // 拍數設定
     let mainBeatEnabled = true; // 主拍音效開關
-    let subBeatPositions = [];
+    let phraseBeats = []; // 樂句節拍位置
     let lookahead = 25; // 預先排程的時間（毫秒）
     let scheduleAheadTime = 0.1; // 預先排程的秒數
     let nextNoteTime = 0.0; // 下一個音符的時間
@@ -160,28 +160,34 @@
         osc.stop(time + noteLength);
     }
 
-    // 排程副拍音符
-    function scheduleSubBeat(time) {
+    // 排程樂句節拍音符
+    function schedulePhraseNote(time, isInteger) {
         // 振盪器
         const osc = audioContext.createOscillator();
         osc.type = 'square';
-        osc.frequency.value = subBeatFrequency;
-        
-        // 音量（比主拍小一點）
-        const gainNode = audioContext.createGain();
-        gainNode.gain.value = 0.15;
-                
-        // ADSR
-        gainNode.gain.setValueAtTime(0.15, time);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, time + subBeatLength);
-        
+
+        // 整數位置使用主拍音效，非整數使用副拍音效
+        if (isInteger) {
+            osc.frequency.value = noteFrequency; // 主拍頻率
+            var gainNode = audioContext.createGain();
+            gainNode.gain.value = 0.25; // 主拍音量
+            gainNode.gain.setValueAtTime(0.25, time);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, time + noteLength);
+        } else {
+            osc.frequency.value = subBeatFrequency; // 副拍頻率
+            var gainNode = audioContext.createGain();
+            gainNode.gain.value = 0.15; // 副拍音量
+            gainNode.gain.setValueAtTime(0.15, time);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, time + subBeatLength);
+        }
+
         // 連接節點
         osc.connect(gainNode);
         gainNode.connect(audioContext.destination);
-        
+
         // 啟動和停止振盪器
         osc.start(time);
-        osc.stop(time + subBeatLength);
+        osc.stop(time + (isInteger ? noteLength : subBeatLength));
     }
 
     // 排程器（負責預先排程音符）
@@ -192,15 +198,16 @@
                 scheduleNote(nextNoteTime);
             }
 
-            // 排程副拍 - 支援多拍範圍
+            // 排程樂句節拍 - 支援多拍範圍
             let secondsPerBeat = 60.0 / bpm;
 
-            // 只在第一拍時排程整個小節的副拍
+            // 只在第一拍時排程整個小節的樂句節拍
             if (currentBeat === 0) {
-                subBeatPositions.forEach(position => {
+                phraseBeats.forEach(position => {
                     // position 現在可以是 0 到 beats 之間的任何數字
-                    let subBeatTime = nextNoteTime + (position * secondsPerBeat);
-                    scheduleSubBeat(subBeatTime);
+                    let phraseTime = nextNoteTime + (position * secondsPerBeat);
+                    let isInteger = Number.isInteger(position);
+                    schedulePhraseNote(phraseTime, isInteger);
                 });
             }
 
@@ -258,7 +265,7 @@
         if (beats > 16) beats = 16;
 
         const description = document.getElementById('subbeats-description');
-        description.textContent = `輸入拍子細分割（0 到 ${beats} 之間數字，用逗號分隔）：`;
+        description.textContent = `輸入樂句節拍（0 到 ${beats} 之間數字，用逗號分隔）：`;
 
         // 重新驗證現有的副拍設定
         updateSubBeats();
@@ -280,8 +287,8 @@
         drawNotation();
     }
 
-    // 解析副拍設定
-    function parseSubBeats(inputString) {
+    // 解析樂句節拍設定
+    function parsePhraseBeats(inputString) {
         if (!inputString || inputString.trim() === '') {
             return [];
         }
@@ -293,8 +300,8 @@
             for (let value of values) {
                 const num = parseFloat(value);
                 if (isNaN(num)) continue;
-                // 修改範圍檢查：現在支援 0 到 beats 之間的數字
-                if (num > 0 && num < beats) {
+                // 修改範圍檢查：現在支援 0 到 beats 之間的數字（包含 0）
+                if (num >= 0 && num < beats) {
                     validPositions.push(num);
                 }
             }
@@ -306,17 +313,17 @@
         }
     }
 
-    // 更新副拍設定
+    // 更新樂句節拍設定
     function updateSubBeats() {
         const input = document.getElementById('subbeats');
         const errorElement = document.getElementById('error-message');
 
         try {
-            subBeatPositions = parseSubBeats(input.value);
+            phraseBeats = parsePhraseBeats(input.value);
             errorElement.textContent = '';
         } catch (e) {
             errorElement.textContent = '輸入格式錯誤';
-            subBeatPositions = [];
+            phraseBeats = [];
         }
 
         // 更新樂譜顯示
@@ -408,20 +415,30 @@
             ctx.fillText(i.toString(), x, centerY + 35);
         }
 
-        // 繪製副拍
-        ctx.fillStyle = '#999';
-        subBeatPositions.forEach(position => {
+        // 繪製樂句節拍
+        phraseBeats.forEach(position => {
             const x = margin + (position * beatWidth);
-            ctx.beginPath();
-            ctx.arc(x, centerY, 5, 0, 2 * Math.PI);
-            ctx.fill();
+            const isInteger = Number.isInteger(position);
 
-            // 標示副拍位置
+            if (isInteger) {
+                // 整數位置：使用主拍樣式（較大的圓點）
+                ctx.fillStyle = '#444';
+                ctx.beginPath();
+                ctx.arc(x, centerY, 7, 0, 2 * Math.PI);
+                ctx.fill();
+            } else {
+                // 非整數位置：使用副拍樣式（較小的圓點）
+                ctx.fillStyle = '#999';
+                ctx.beginPath();
+                ctx.arc(x, centerY, 5, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+
+            // 標示樂句節拍位置
             ctx.font = '12px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillStyle = '#666';
             ctx.fillText(position.toString(), x, centerY - 20);
-            ctx.fillStyle = '#999';
         });
 
         // 繪製標題
@@ -434,12 +451,14 @@
         ctx.font = '12px sans-serif';
         ctx.fillStyle = '#333';
         if (mainBeatEnabled) {
-            ctx.fillText('● 主拍', canvas.width - 100, 25);
+            ctx.fillText('● 主拍', canvas.width - 140, 25);
         } else {
-            ctx.fillText('○ 主拍(無音效)', canvas.width - 120, 25);
+            ctx.fillText('○ 主拍(無音效)', canvas.width - 140, 25);
         }
+        ctx.fillStyle = '#444';
+        ctx.fillText('● 樂句節拍(整數)', canvas.width - 140, 45);
         ctx.fillStyle = '#999';
-        ctx.fillText('● 副拍', canvas.width - 100, 45);
+        ctx.fillText('● 樂句節拍(小數)', canvas.width - 140, 65);
     }
 
     // 當頁面載入完成後初始化
