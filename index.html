@@ -133,7 +133,7 @@
     </div>
 
     <p><br />樂譜預覽：</p>
-    <canvas id="notation-canvas" width="600" height="140"></canvas>
+    <canvas id="notation-canvas" width="600" height="180"></canvas>
 
 
     <script type="text/javascript" nonce="85ebbf0f41d74e43ac65f263643" src="//local.adguard.org?ts=1759115367134&amp;type=content-script&amp;dmn=nicechord.com&amp;url=https%3A%2F%2Fnicechord.com%2Fmetro3%2Findex.html&amp;app=com.google.Chrome&amp;css=3&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1"></script><script type="text/javascript" nonce="85ebbf0f41d74e43ac65f263643" src="//local.adguard.org?ts=1759115367134&amp;name=AdGuard%20Extra&amp;type=user-script"></script><script type="text/javascript">
@@ -680,44 +680,46 @@
         ctx.textAlign = 'left';
         ctx.fillText(`${beats} 拍小節`, 10, 25);
 
-        // 圖例
+        // 圖例 - 移到樂譜下方
         ctx.font = '12px sans-serif';
-        let legendY = 25;
+        let legendY = centerY + 60; // 從樂譜下方開始
+        let legendX = margin;       // 從左側邊距開始
 
         // 主拍圖例
         ctx.fillStyle = '#333';
         if (mainBeatEnabled) {
-            ctx.fillText('● 主拍', canvas.width - 160, legendY);
+            ctx.fillText('● 主拍', legendX, legendY);
         } else {
-            ctx.fillText('○ 主拍(無音效)', canvas.width - 160, legendY);
+            ctx.fillText('○ 主拍(無音效)', legendX, legendY);
         }
-        legendY += 20;
+        legendX += 120;
 
         if (melodyModeEnabled) {
             // 主旋律/伴奏分離模式圖例
             if (playMode === 'melody' || playMode === 'both') {
                 ctx.fillStyle = '#0066cc';
-                ctx.fillText('● 主旋律(整數)', canvas.width - 160, legendY);
-                legendY += 15;
+                ctx.fillText('● 主旋律(整數)', legendX, legendY);
+                legendX += 120;
                 ctx.fillStyle = '#4da6ff';
-                ctx.fillText('● 主旋律(小數)', canvas.width - 160, legendY);
+                ctx.fillText('● 主旋律(小數)', legendX, legendY);
+                legendX = margin; // 換行
                 legendY += 20;
             }
 
             if (playMode === 'accompaniment' || playMode === 'both') {
                 ctx.fillStyle = '#cc6600';
-                ctx.fillText('● 伴奏(整數)', canvas.width - 160, legendY);
-                legendY += 15;
+                ctx.fillText('● 伴奏(整數)', legendX, legendY);
+                legendX += 120;
                 ctx.fillStyle = '#ff9933';
-                ctx.fillText('● 伴奏(小數)', canvas.width - 160, legendY);
+                ctx.fillText('● 伴奏(小數)', legendX, legendY);
             }
         } else {
             // 一般樂句節拍模式圖例
             ctx.fillStyle = '#444';
-            ctx.fillText('● 樂句節拍(整數)', canvas.width - 160, legendY);
-            legendY += 15;
+            ctx.fillText('● 樂句節拍(整數)', legendX, legendY);
+            legendX += 140;
             ctx.fillStyle = '#999';
-            ctx.fillText('● 樂句節拍(小數)', canvas.width - 160, legendY);
+            ctx.fillText('● 樂句節拍(小數)', legendX, legendY);
         }
     }
 
