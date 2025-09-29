@@ -154,7 +154,9 @@
     let nextNoteTime = 0.0; // 下一個音符的時間
     let currentBeat = 0; // 目前在第幾拍（0 開始）
     let currentPosition = 0; // 目前播放位置（用於箭頭指示器）
+    let playStartTime = 0; // 播放開始的時間（用於精確計算位置）
     let timerID = null; // 排程計時器
+    let arrowUpdateID = null; // 箭頭更新計時器
     let noteLength = 0.05; // 主拍音符長度（秒）
     let subBeatLength = 0.03; // 副拍音符長度（秒）
     let noteFrequency = 523.25; // C5 頻率
@@ -336,12 +338,34 @@
 
         // 更新目前拍數，支援多拍循環
         currentBeat = (currentBeat + 1) % beats;
+    }
 
-        // 更新當前播放位置（用於箭頭指示器）
-        currentPosition = currentBeat;
+    // 更新箭頭位置（高精度）
+    function updateArrowPosition() {
+        if (!isPlaying || !audioContext) return;
 
-        // 重繪樂譜以更新箭頭位置
+        // 計算從開始播放到現在的時間
+        const currentTime = audioContext.currentTime;
+        const elapsedTime = currentTime - playStartTime;
+
+        // 計算當前精確位置（以拍為單位）
+        const secondsPerBeat = 60.0 / bpm;
+        let precisePosition = (elapsedTime / secondsPerBeat) % beats;
+
+        // 確保位置在有效範圍內
+        if (precisePosition < 0) precisePosition = 0;
+        if (precisePosition >= beats) precisePosition = precisePosition % beats;
+
+        // 更新當前位置
+        currentPosition = precisePosition;
+
+        // 重繪樂譜
         drawNotation();
+
+        // 繼續更新（約每10ms更新一次，對應0.01拍的精度）
+        if (isPlaying) {
+            arrowUpdateID = requestAnimationFrame(updateArrowPosition);
+        }
     }
 
     // 開始節拍器
@@ -356,9 +380,11 @@
         if (!isPlaying) {
             isPlaying = true;
             nextNoteTime = audioContext.currentTime;
+            playStartTime = audioContext.currentTime; // 記錄開始時間
             currentBeat = 0; // 重設拍數計數器
             currentPosition = 0; // 重設播放位置指示器
             scheduler();
+            updateArrowPosition(); // 開始箭頭位置更新
         }
     }
 
@@ -366,6 +392,12 @@
     function metrostop() {
         isPlaying = false;
         clearTimeout(timerID);
+
+        // 停止箭頭位置更新
+        if (arrowUpdateID) {
+            cancelAnimationFrame(arrowUpdateID);
+            arrowUpdateID = null;
+        }
 
         // 重繪樂譜以隱藏箭頭指示器
         drawNotation();
