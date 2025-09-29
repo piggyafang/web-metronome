@@ -76,10 +76,43 @@
         <input id="main-beat-enabled" type="checkbox" checked onchange="updateMainBeatSetting();">
         主拍音效
     </label>
+    <br><br>
+    <label>
+        <input id="melody-mode-enabled" type="checkbox" onchange="updateMelodyMode();">
+        主旋律/伴奏分離模式
+    </label>
 
-    <p><br /><span id="subbeats-description">輸入樂句節拍（0 到 1 之間數字，用逗號分隔）：</span></p>
-    <input id="subbeats" type="text" placeholder="例如：0.5 或 0.25,0.5,0.75" oninput="updateSubBeats();" style="width: 300px;">
-    <span id="error-message" class="error-message"></span>
+    <!-- 一般樂句節拍模式 -->
+    <div id="normal-mode">
+        <p><br /><span id="subbeats-description">輸入樂句節拍（0 到 1 之間數字，用逗號分隔）：</span></p>
+        <input id="subbeats" type="text" placeholder="例如：0.5 或 0.25,0.5,0.75" oninput="updateSubBeats();" style="width: 300px;">
+        <span id="error-message" class="error-message"></span>
+    </div>
+
+    <!-- 主旋律/伴奏分離模式 -->
+    <div id="melody-mode" style="display: none;">
+        <p><br />主旋律節拍（<span id="melody-description">0 到 1 之間數字，用逗號分隔</span>）：</p>
+        <input id="melody-beats" type="text" placeholder="例如：0, 0.5, 1" oninput="updateMelodyBeats();" style="width: 300px;">
+        <span id="melody-error-message" class="error-message"></span>
+
+        <p><br />伴奏節拍（<span id="accompaniment-description">0 到 1 之間數字，用逗號分隔</span>）：</p>
+        <input id="accompaniment-beats" type="text" placeholder="例如：0.25, 0.75" oninput="updateAccompanimentBeats();" style="width: 300px;">
+        <span id="accompaniment-error-message" class="error-message"></span>
+
+        <p><br />播放模式：</p>
+        <label>
+            <input type="radio" name="play-mode" value="melody" checked onchange="updatePlayMode();">
+            只播放主旋律
+        </label><br>
+        <label>
+            <input type="radio" name="play-mode" value="accompaniment" onchange="updatePlayMode();">
+            只播放伴奏
+        </label><br>
+        <label>
+            <input type="radio" name="play-mode" value="both" onchange="updatePlayMode();">
+            播放兩者合併
+        </label>
+    </div>
 	<p><br />快速設定：</p>
     <div class="preset-buttons">
         <button onclick="setPreset('0.5')">八分</button>
@@ -110,6 +143,12 @@
     let beats = 1; // 拍數設定
     let mainBeatEnabled = true; // 主拍音效開關
     let phraseBeats = []; // 樂句節拍位置
+
+    // 主旋律/伴奏分離模式變數
+    let melodyModeEnabled = false; // 主旋律/伴奏分離模式開關
+    let melodyBeats = []; // 主旋律節拍位置
+    let accompanimentBeats = []; // 伴奏節拍位置
+    let playMode = 'melody'; // 播放模式：'melody', 'accompaniment', 'both'
     let lookahead = 25; // 預先排程的時間（毫秒）
     let scheduleAheadTime = 0.1; // 預先排程的秒數
     let nextNoteTime = 0.0; // 下一個音符的時間
@@ -190,6 +229,56 @@
         osc.stop(time + (isInteger ? noteLength : subBeatLength));
     }
 
+    // 排程主旋律音符（使用特定頻率和音色）
+    function scheduleMelodyNote(time, isInteger) {
+        const osc = audioContext.createOscillator();
+        osc.type = 'sawtooth'; // 使用鋸齒波作為主旋律音色
+
+        if (isInteger) {
+            osc.frequency.value = noteFrequency * 1.2; // 稍高的頻率
+            var gainNode = audioContext.createGain();
+            gainNode.gain.value = 0.28;
+            gainNode.gain.setValueAtTime(0.28, time);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, time + noteLength);
+        } else {
+            osc.frequency.value = subBeatFrequency * 1.2;
+            var gainNode = audioContext.createGain();
+            gainNode.gain.value = 0.18;
+            gainNode.gain.setValueAtTime(0.18, time);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, time + subBeatLength);
+        }
+
+        osc.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        osc.start(time);
+        osc.stop(time + (isInteger ? noteLength : subBeatLength));
+    }
+
+    // 排程伴奏音符（使用特定頻率和音色）
+    function scheduleAccompanimentNote(time, isInteger) {
+        const osc = audioContext.createOscillator();
+        osc.type = 'triangle'; // 使用三角波作為伴奏音色
+
+        if (isInteger) {
+            osc.frequency.value = noteFrequency * 0.8; // 稍低的頻率
+            var gainNode = audioContext.createGain();
+            gainNode.gain.value = 0.2;
+            gainNode.gain.setValueAtTime(0.2, time);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, time + noteLength);
+        } else {
+            osc.frequency.value = subBeatFrequency * 0.8;
+            var gainNode = audioContext.createGain();
+            gainNode.gain.value = 0.12;
+            gainNode.gain.setValueAtTime(0.12, time);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, time + subBeatLength);
+        }
+
+        osc.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        osc.start(time);
+        osc.stop(time + (isInteger ? noteLength : subBeatLength));
+    }
+
     // 排程器（負責預先排程音符）
     function scheduler() {
         while (nextNoteTime < audioContext.currentTime + scheduleAheadTime) {
@@ -198,17 +287,37 @@
                 scheduleNote(nextNoteTime);
             }
 
-            // 排程樂句節拍 - 支援多拍範圍
             let secondsPerBeat = 60.0 / bpm;
 
-            // 只在第一拍時排程整個小節的樂句節拍
+            // 只在第一拍時排程整個小節的節拍
             if (currentBeat === 0) {
-                phraseBeats.forEach(position => {
-                    // position 現在可以是 0 到 beats 之間的任何數字
-                    let phraseTime = nextNoteTime + (position * secondsPerBeat);
-                    let isInteger = Number.isInteger(position);
-                    schedulePhraseNote(phraseTime, isInteger);
-                });
+                if (melodyModeEnabled) {
+                    // 主旋律/伴奏分離模式
+                    if (playMode === 'melody' || playMode === 'both') {
+                        // 排程主旋律節拍
+                        melodyBeats.forEach(position => {
+                            let melodyTime = nextNoteTime + (position * secondsPerBeat);
+                            let isInteger = Number.isInteger(position);
+                            scheduleMelodyNote(melodyTime, isInteger);
+                        });
+                    }
+
+                    if (playMode === 'accompaniment' || playMode === 'both') {
+                        // 排程伴奏節拍
+                        accompanimentBeats.forEach(position => {
+                            let accompTime = nextNoteTime + (position * secondsPerBeat);
+                            let isInteger = Number.isInteger(position);
+                            scheduleAccompanimentNote(accompTime, isInteger);
+                        });
+                    }
+                } else {
+                    // 一般樂句節拍模式
+                    phraseBeats.forEach(position => {
+                        let phraseTime = nextNoteTime + (position * secondsPerBeat);
+                        let isInteger = Number.isInteger(position);
+                        schedulePhraseNote(phraseTime, isInteger);
+                    });
+                }
             }
 
             nextBeat();
@@ -267,8 +376,15 @@
         const description = document.getElementById('subbeats-description');
         description.textContent = `輸入樂句節拍（0 到 ${beats} 之間數字，用逗號分隔）：`;
 
-        // 重新驗證現有的副拍設定
+        // 重新驗證現有的設定
         updateSubBeats();
+
+        // 如果在主旋律模式，也要更新描述文字
+        if (melodyModeEnabled) {
+            updateMelodyDescriptions();
+            updateMelodyBeats();
+            updateAccompanimentBeats();
+        }
 
         // 更新樂譜顯示
         drawNotation();
@@ -282,6 +398,79 @@
     // 更新主拍音效設定
     function updateMainBeatSetting() {
         mainBeatEnabled = document.getElementById('main-beat-enabled').checked;
+
+        // 更新樂譜顯示
+        drawNotation();
+    }
+
+    // 更新主旋律/伴奏分離模式
+    function updateMelodyMode() {
+        melodyModeEnabled = document.getElementById('melody-mode-enabled').checked;
+
+        // 切換顯示的輸入區域
+        const normalMode = document.getElementById('normal-mode');
+        const melodyMode = document.getElementById('melody-mode');
+
+        if (melodyModeEnabled) {
+            normalMode.style.display = 'none';
+            melodyMode.style.display = 'block';
+            // 更新描述文字
+            updateMelodyDescriptions();
+        } else {
+            normalMode.style.display = 'block';
+            melodyMode.style.display = 'none';
+        }
+
+        // 更新樂譜顯示
+        drawNotation();
+    }
+
+    // 更新主旋律和伴奏的描述文字
+    function updateMelodyDescriptions() {
+        document.getElementById('melody-description').textContent = `0 到 ${beats} 之間數字，用逗號分隔`;
+        document.getElementById('accompaniment-description').textContent = `0 到 ${beats} 之間數字，用逗號分隔`;
+    }
+
+    // 更新主旋律節拍
+    function updateMelodyBeats() {
+        const input = document.getElementById('melody-beats');
+        const errorElement = document.getElementById('melody-error-message');
+
+        try {
+            melodyBeats = parsePhraseBeats(input.value);
+            errorElement.textContent = '';
+        } catch (e) {
+            errorElement.textContent = '輸入格式錯誤';
+            melodyBeats = [];
+        }
+
+        // 更新樂譜顯示
+        drawNotation();
+    }
+
+    // 更新伴奏節拍
+    function updateAccompanimentBeats() {
+        const input = document.getElementById('accompaniment-beats');
+        const errorElement = document.getElementById('accompaniment-error-message');
+
+        try {
+            accompanimentBeats = parsePhraseBeats(input.value);
+            errorElement.textContent = '';
+        } catch (e) {
+            errorElement.textContent = '輸入格式錯誤';
+            accompanimentBeats = [];
+        }
+
+        // 更新樂譜顯示
+        drawNotation();
+    }
+
+    // 更新播放模式
+    function updatePlayMode() {
+        const selectedMode = document.querySelector('input[name="play-mode"]:checked');
+        if (selectedMode) {
+            playMode = selectedMode.value;
+        }
 
         // 更新樂譜顯示
         drawNotation();
@@ -415,31 +604,75 @@
             ctx.fillText(i.toString(), x, centerY + 35);
         }
 
-        // 繪製樂句節拍
-        phraseBeats.forEach(position => {
-            const x = margin + (position * beatWidth);
-            const isInteger = Number.isInteger(position);
+        // 繪製節拍（根據模式決定繪製內容）
+        if (melodyModeEnabled) {
+            // 主旋律/伴奏分離模式
+            if (playMode === 'melody' || playMode === 'both') {
+                // 繪製主旋律節拍
+                melodyBeats.forEach(position => {
+                    const x = margin + (position * beatWidth);
+                    const isInteger = Number.isInteger(position);
 
-            if (isInteger) {
-                // 整數位置：使用主拍樣式（較大的圓點）
-                ctx.fillStyle = '#444';
-                ctx.beginPath();
-                ctx.arc(x, centerY, 7, 0, 2 * Math.PI);
-                ctx.fill();
-            } else {
-                // 非整數位置：使用副拍樣式（較小的圓點）
-                ctx.fillStyle = '#999';
-                ctx.beginPath();
-                ctx.arc(x, centerY, 5, 0, 2 * Math.PI);
-                ctx.fill();
+                    // 主旋律：使用藍色系
+                    ctx.fillStyle = isInteger ? '#0066cc' : '#4da6ff';
+                    ctx.beginPath();
+                    ctx.arc(x, centerY - 10, isInteger ? 7 : 5, 0, 2 * Math.PI);
+                    ctx.fill();
+
+                    // 標示位置
+                    ctx.font = '10px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = '#0066cc';
+                    ctx.fillText(position.toString(), x, centerY - 25);
+                });
             }
 
-            // 標示樂句節拍位置
-            ctx.font = '12px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillStyle = '#666';
-            ctx.fillText(position.toString(), x, centerY - 20);
-        });
+            if (playMode === 'accompaniment' || playMode === 'both') {
+                // 繪製伴奏節拍
+                accompanimentBeats.forEach(position => {
+                    const x = margin + (position * beatWidth);
+                    const isInteger = Number.isInteger(position);
+
+                    // 伴奏：使用紅色系
+                    ctx.fillStyle = isInteger ? '#cc6600' : '#ff9933';
+                    ctx.beginPath();
+                    ctx.arc(x, centerY + 10, isInteger ? 7 : 5, 0, 2 * Math.PI);
+                    ctx.fill();
+
+                    // 標示位置
+                    ctx.font = '10px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = '#cc6600';
+                    ctx.fillText(position.toString(), x, centerY + 25);
+                });
+            }
+        } else {
+            // 一般樂句節拍模式
+            phraseBeats.forEach(position => {
+                const x = margin + (position * beatWidth);
+                const isInteger = Number.isInteger(position);
+
+                if (isInteger) {
+                    // 整數位置：使用主拍樣式（較大的圓點）
+                    ctx.fillStyle = '#444';
+                    ctx.beginPath();
+                    ctx.arc(x, centerY, 7, 0, 2 * Math.PI);
+                    ctx.fill();
+                } else {
+                    // 非整數位置：使用副拍樣式（較小的圓點）
+                    ctx.fillStyle = '#999';
+                    ctx.beginPath();
+                    ctx.arc(x, centerY, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+
+                // 標示樂句節拍位置
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#666';
+                ctx.fillText(position.toString(), x, centerY - 20);
+            });
+        }
 
         // 繪製標題
         ctx.fillStyle = '#333';
@@ -449,16 +682,43 @@
 
         // 圖例
         ctx.font = '12px sans-serif';
+        let legendY = 25;
+
+        // 主拍圖例
         ctx.fillStyle = '#333';
         if (mainBeatEnabled) {
-            ctx.fillText('● 主拍', canvas.width - 140, 25);
+            ctx.fillText('● 主拍', canvas.width - 160, legendY);
         } else {
-            ctx.fillText('○ 主拍(無音效)', canvas.width - 140, 25);
+            ctx.fillText('○ 主拍(無音效)', canvas.width - 160, legendY);
         }
-        ctx.fillStyle = '#444';
-        ctx.fillText('● 樂句節拍(整數)', canvas.width - 140, 45);
-        ctx.fillStyle = '#999';
-        ctx.fillText('● 樂句節拍(小數)', canvas.width - 140, 65);
+        legendY += 20;
+
+        if (melodyModeEnabled) {
+            // 主旋律/伴奏分離模式圖例
+            if (playMode === 'melody' || playMode === 'both') {
+                ctx.fillStyle = '#0066cc';
+                ctx.fillText('● 主旋律(整數)', canvas.width - 160, legendY);
+                legendY += 15;
+                ctx.fillStyle = '#4da6ff';
+                ctx.fillText('● 主旋律(小數)', canvas.width - 160, legendY);
+                legendY += 20;
+            }
+
+            if (playMode === 'accompaniment' || playMode === 'both') {
+                ctx.fillStyle = '#cc6600';
+                ctx.fillText('● 伴奏(整數)', canvas.width - 160, legendY);
+                legendY += 15;
+                ctx.fillStyle = '#ff9933';
+                ctx.fillText('● 伴奏(小數)', canvas.width - 160, legendY);
+            }
+        } else {
+            // 一般樂句節拍模式圖例
+            ctx.fillStyle = '#444';
+            ctx.fillText('● 樂句節拍(整數)', canvas.width - 160, legendY);
+            legendY += 15;
+            ctx.fillStyle = '#999';
+            ctx.fillText('● 樂句節拍(小數)', canvas.width - 160, legendY);
+        }
     }
 
     // 當頁面載入完成後初始化
